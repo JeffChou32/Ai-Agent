@@ -2,28 +2,40 @@ from langchain_community.tools import WikipediaQueryRun, DuckDuckGoSearchRun
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain.tools import Tool
 from datetime import datetime
+import pdfplumber
+from langchain_openai import ChatOpenAI
+import os
+from dotenv import load_dotenv
 
-def save_to_txt(data: str, filename: str = "research_output.txt"):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    formatted_text = f"--- Research Output ---\nTimestamp: {timestamp}\n\n{data}\n\n"
+llm = ChatOpenAI(model="gpt-4o-mini")
 
-    with open(filename, "a", encoding="utf-8") as f:
-        f.write(formatted_text)
-    
-    return f"Data successfully saved to {filename}"
+# AI-powered PDF analysis for spending habits
+def analyze_spending_from_pdf(pdf_path: str):
+    with pdfplumber.open(pdf_path) as pdf:
+        raw_text = "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
 
-save_tool = Tool(
-    name="save_text_to_file",
-    func=save_to_txt,
-    description="Saves structured research data to a text file.",
+    if not raw_text:
+        return "No text extracted from PDF. Ensure the PDF is not an image-based scan."
+
+    prompt = f"""
+    You are a financial assistant analyzing a Wells Fargo bank statement.
+    Extract transactions, categorize them, and provide insights including:
+
+    - Total spending for the month
+    - Amount spent by category (Dining, Groceries, Bills, etc.)
+    - Unusual transactions (large or unexpected expenses)
+    - Budget improvement suggestions and opinion on spending habits.
+
+    Here is the statement text:
+    {raw_text}
+    """
+
+    response = llm.invoke(prompt)
+    return response
+
+# Define LangChain tool
+ai_spending_tool = Tool(
+    name="analyze_spending_from_pdf",
+    func=analyze_spending_from_pdf,
+    description="Extracts and analyzes spending habits from a Wells Fargo PDF statement."
 )
-
-search = DuckDuckGoSearchRun()
-search_tool = Tool(
-    name="search",
-    func=search.run,
-    description="Search the web for information",
-)
-
-api_wrapper = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=100)
-wiki_tool = WikipediaQueryRun(api_wrapper=api_wrapper)
